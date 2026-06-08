@@ -30,7 +30,7 @@ CREATE TABLE IF NOT EXISTS resources (
   google_rating DOUBLE,
   google_review_count INT,
   source VARCHAR(80),
-  source_url VARCHAR(500)
+  source_url TEXT
 );
 
 CREATE TABLE IF NOT EXISTS admin_users (

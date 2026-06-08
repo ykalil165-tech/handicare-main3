@@ -33,6 +33,9 @@ def run(input_path: Path):
     sql = f"INSERT INTO resources ({', '.join(cols)}) VALUES ({placeholders})"
     inserted = 0
     for r in records:
+        source_url = r.get('sourceUrl')
+        if isinstance(source_url, str) and len(source_url) > 500:
+            r['sourceUrl'] = source_url[:500]
         values = [r.get(key) for key in COLUMNS.keys()]
         cursor.execute(sql, values)
         inserted += 1

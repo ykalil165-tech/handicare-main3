@@ -69,7 +69,7 @@ public class SupportResource {
     private Integer googleReviewCount;
     private String source;
 
-    @Column(length = 500)
+    @Column(columnDefinition = "TEXT")
     private String sourceUrl;
 
     public Long getId() {

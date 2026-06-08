@@ -1,0 +1,46 @@
+Project Starter Instructions
+
+1) Open the repository root:
+   cd handicare-main3
+
+2) Backend (Spring Boot):
+   - Open a terminal in the repo root.
+   - Change into the backend folder:
+     cd backend
+   - Build and run the Spring Boot app:
+     mvn spring-boot:run
+   - The backend should start and listen on the configured port (usually 8080).
+
+3) Frontend (Vite + React):
+   - Open a second terminal in the repo root.
+   - Change into the frontend folder:
+     cd frontend
+   - Install dependencies:
+     npm install
+   - Start the frontend dev server:
+     npm run dev
+   - Open the local URL shown by Vite in your browser.
+
+4) Scraper pipeline:
+   - Open a third terminal in the repo root.
+   - Install Python requirements if not already installed:
+     python -m pip install -r tools/resource-import/requirements.txt
+   - Install Playwright browsers:
+     python -m playwright install chromium
+   - Run the scraper to generate raw data:
+     python tools/resource-import/scrape_google_maps.py --queries tools/resource-import/queries.json --out data/raw_resources.json
+   - Clean the scraped output:
+     python tools/resource-import/clean_export_resources.py --input data/raw_resources.json --out-dir data/clean
+   - Import cleaned data into MySQL:
+     $env:DB_HOST='localhost'
+     $env:DB_PORT='3306'
+     $env:DB_NAME='handicare'
+     $env:DB_USER='root'
+     $env:DB_PASSWORD='1234'
+     python tools/resource-import/import_mysql.py --input data/clean/resources_clean.json
+
+Notes:
+- The backend and frontend should generally be run in separate terminals.
+- The scraper writes raw JSON to data/raw_resources.json, then cleans it to data/clean/resources_clean.json.
+- The importer reads the cleaned JSON and inserts records into the MySQL database.
+- If you use a different MySQL password or database name, update the environment variables accordingly.

@@ -1,0 +1,23 @@
+{
+  "total_raw": 89,
+  "total_validated": 74,
+  "total_rejected": 15,
+  "by_type": {
+    "ASSOCIATION": 8,
+    "REHABILITATION_CENTER": 8,
+    "HOSPITAL": 10,
+    "PHARMACY": 10,
+    "DOCTOR": 7,
+    "TRANSPORT": 6,
+    "CABINET": 18,
+    "EMERGENCY": 7
+  },
+  "by_need": {
+    "motor": 56,
+    "visual": 40,
+    "hearing": 42,
+    "cognitive": 22,
+    "caregiver": 14,
+    "chronic": 42
+  }
+}

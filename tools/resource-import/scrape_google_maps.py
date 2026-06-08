@@ -113,7 +113,8 @@ def run(config_path: Path, out_path: Path) -> None:
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=False, slow_mo=150)
-        page = browser.new_page(locale='fr-FR')
+        context = browser.new_context(locale='fr-FR')
+        page = context.new_page()
         for item in config['queries']:
             search = f"{item['query']} {config.get('city', '')}".strip()
             page.goto(f"https://www.google.com/maps/search/{quote_plus(search)}", wait_until='domcontentloaded')
@@ -145,6 +146,7 @@ def run(config_path: Path, out_path: Path) -> None:
                 except PlaywrightTimeoutError:
                     continue
 
+        context.close()
         browser.close()
 
     out_path.write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding='utf-8')
