@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api")
@@ -32,6 +33,12 @@ public class ReviewController {
     @GetMapping("/resources/{id}/reviews/stats")
     public ReviewStatsResponse stats(@PathVariable Long id) {
         return reviewService.stats(id);
+    }
+
+    /** Bulk stats: returns {resourceId -> {averageRating, reviewCount}} for all resources */
+    @GetMapping("/reviews/stats/all")
+    public Map<Long, Map<String, Object>> allStats() {
+        return reviewService.allStats();
     }
 
     @PostMapping("/resources/{id}/reviews")

@@ -63,7 +63,8 @@ CREATE TABLE IF NOT EXISTS association_accounts (
   services VARCHAR(500),
   description TEXT,
   contact_person VARCHAR(140),
-  status VARCHAR(40)
+  status VARCHAR(40),
+  platform_email VARCHAR(180) UNIQUE
 );
 
 CREATE TABLE IF NOT EXISTS reviews (
@@ -83,3 +84,30 @@ CREATE TABLE IF NOT EXISTS reviews (
 
 CREATE INDEX idx_reviews_resource ON reviews(resource_id);
 CREATE INDEX idx_reviews_user ON reviews(user_id);
+
+CREATE TABLE IF NOT EXISTS favorites (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  user_id BIGINT NOT NULL,
+  resource_id BIGINT NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_favorites_user FOREIGN KEY (user_id) REFERENCES app_users(id) ON DELETE CASCADE,
+  CONSTRAINT fk_favorites_resource FOREIGN KEY (resource_id) REFERENCES resources(id) ON DELETE CASCADE,
+  CONSTRAINT uk_favorites_user_resource UNIQUE (user_id, resource_id)
+);
+
+CREATE INDEX idx_favorites_user ON favorites(user_id);
+CREATE INDEX idx_favorites_resource ON favorites(resource_id);
+
+CREATE TABLE IF NOT EXISTS messages (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  sender_id BIGINT NOT NULL,
+  sender_type VARCHAR(20) NOT NULL,
+  receiver_id BIGINT NOT NULL,
+  receiver_type VARCHAR(20) NOT NULL,
+  content TEXT NOT NULL,
+  `read` BOOLEAN DEFAULT FALSE,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_messages_sender ON messages(sender_id, sender_type);
+CREATE INDEX idx_messages_receiver ON messages(receiver_id, receiver_type);

@@ -1,0 +1,45 @@
+\documentclass[border=10pt]{standalone}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{tikz}
+\usepackage{tikz-uml}
+\usepackage{lmodern}
+
+\begin{document}
+\begin{tikzpicture}
+
+\begin{umlseqdiag}
+\umlobject[class=Client]{Frontend}
+\umlobject[class=REST]{ReviewController}
+\umlobject[class=Service]{ReviewService}
+\umlobject[class=Service]{AuthService}
+\umlobject[class=Repository]{ReviewRepo}
+\umlobject[class=Repository]{ResourceRepo}
+\umlobject[class=Service]{NotificationService}
+
+\begin{umlcall}[op={POST /api/resources/\{id\}/reviews(rating, comment, difficulty)}, return={201 ReviewResponse}]{Frontend}{ReviewController}
+  \begin{umlcall}[op={create(resourceId, request, authHeader)}, return={ReviewResponse}]{ReviewController}{ReviewService}
+    \begin{umlcall}[op={requireUser(authHeader)}, return={AppUser}]{ReviewService}{AuthService}
+    \end{umlcall}
+    \begin{umlcall}[op={existsByResourceIdAndUserId(resourceId, userId)}, return={boolean}]{ReviewService}{ReviewRepo}
+    \end{umlcall}
+    \begin{umlfragment}[type=alt, label={review already exists}, inner xsep=2]
+      \begin{umlcallself}[op={throw ReviewAlreadyExistsException}]{ReviewService}
+      \end{umlcallself}
+    \umlfpart[else: no existing review]
+      \begin{umlcall}[op={findById(resourceId)}, return={SupportResource}]{ReviewService}{ResourceRepo}
+      \end{umlcall}
+      \begin{umlcallself}[op={new Review(resource, user, rating, comment, difficulty)}]{ReviewService}
+      \end{umlcallself}
+      \begin{umlcall}[op={save(Review)}, return={Review}]{ReviewService}{ReviewRepo}
+      \end{umlcall}
+      \begin{umlcall}[op={notify(otherReviewers, "review", message, reviewId)}]{ReviewService}{NotificationService}
+      \end{umlcall}
+    \end{umlfragment}
+  \end{umlcall}
+\end{umlcall}
+
+\end{umlseqdiag}
+
+\end{tikzpicture}
+\end{document}

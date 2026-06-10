@@ -40,6 +40,8 @@ public class AssociationAccount {
     @Enumerated(EnumType.STRING)
     private AssociationStatus status;
 
+    private String platformEmail;
+
     public Long getId() {
         return id;
     }
@@ -142,6 +144,14 @@ public class AssociationAccount {
 
     public void setStatus(AssociationStatus status) {
         this.status = status;
+    }
+
+    public String getPlatformEmail() {
+        return platformEmail;
+    }
+
+    public void setPlatformEmail(String platformEmail) {
+        this.platformEmail = platformEmail;
     }
 }
 

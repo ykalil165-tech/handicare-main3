@@ -1,6 +1,7 @@
 package ma.handicare.auth;
 
 import jakarta.validation.Valid;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -35,5 +36,17 @@ public class AuthController {
     @PostMapping("/logout")
     public void logout(@RequestHeader(value = "Authorization", required = false) String authorizationHeader) {
         authService.logout(authorizationHeader);
+    }
+
+    @PostMapping("/change-password")
+    public ResponseEntity<?> changePassword(
+            @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
+            @Valid @RequestBody ChangePasswordRequest request) {
+        try {
+            authService.changePassword(authorizationHeader, request);
+            return ResponseEntity.ok().build();
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(java.util.Map.of("error", e.getMessage()));
+        }
     }
 }

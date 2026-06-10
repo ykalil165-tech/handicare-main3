@@ -1,0 +1,64 @@
+@startuml sequence_register
+!theme plain
+skinparam defaultFontName "Computer Modern"
+skinparam defaultFontSize 12
+skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
+
+title **Diagramme de Séquence — Inscription Utilisateur**
+
+actor "Utilisateur" as User
+participant "Frontend\n(React)" as FE
+participant "AuthController\n<<REST>>" as AC
+participant "AuthService\n<<Service>>" as AS
+database "AdminUserRepository" as AR
+database "AppUserRepository" as UR
+
+User -> FE : Remplir formulaire\n(fullName, email, password, preferredNeed)
+activate FE
+
+FE -> AC : POST /api/auth/register\n{fullName, email, password, preferredNeed}
+activate AC
+
+AC -> AS : register(RegisterRequest)
+activate AS
+
+== Vérification unicité email ==
+
+AS -> AR : findByEmailIgnoreCase(email)
+activate AR
+AR --> AS : Optional<AdminUser>
+deactivate AR
+
+AS -> UR : findByEmailIgnoreCase(email)
+activate UR
+UR --> AS : Optional<AppUser>
+deactivate UR
+
+alt Email déjà utilisé
+    AS --> AC : throw IllegalArgumentException\n("Email already used")
+    AC --> FE : 400 Bad Request
+    FE --> User : Afficher erreur "Email déjà utilisé"
+else Email disponible
+    == Création du compte ==
+    AS -> AS : hashPassword(password)\n(BCrypt)
+    AS -> AS : new AppUser(fullName, email,\npreferredNeed, passwordHash)
+    AS -> UR : save(AppUser)
+    activate UR
+    UR --> AS : AppUser (avec id généré)
+    deactivate UR
+    
+    == Création session ==
+    AS -> AS : createToken()\n(SecureRandom 32 bytes → Base64)
+    AS -> AS : sessions.put(token,\n{userId, "USER"})
+    
+    AS --> AC : AuthResponse(token, id,\nfullName, email, "USER")
+    deactivate AS
+    AC --> FE : 200 OK + AuthResponse
+    deactivate AC
+    FE --> User : Connexion automatique\n+ Redirection accueil
+end
+
+deactivate FE
+
+@enduml

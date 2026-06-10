@@ -2,6 +2,7 @@ package ma.handicare.review;
 
 import ma.handicare.auth.AuthService;
 import ma.handicare.auth.UnauthorizedException;
+import ma.handicare.notification.NotificationService;
 import ma.handicare.resource.ResourceNotFoundException;
 import ma.handicare.resource.SupportResourceRepository;
 import ma.handicare.user.AppUser;
@@ -9,22 +10,27 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @Service
 public class ReviewService {
     private final ReviewRepository reviewRepository;
     private final SupportResourceRepository resourceRepository;
     private final AuthService authService;
+    private final NotificationService notificationService;
 
     public ReviewService(
             ReviewRepository reviewRepository,
             SupportResourceRepository resourceRepository,
-            AuthService authService
+            AuthService authService,
+            NotificationService notificationService
     ) {
         this.reviewRepository = reviewRepository;
         this.resourceRepository = resourceRepository;
         this.authService = authService;
+        this.notificationService = notificationService;
     }
 
     @Transactional(readOnly = true)
@@ -42,10 +48,21 @@ public class ReviewService {
             throw new ReviewAlreadyExistsException();
         }
         Review review = new Review();
-        review.setResource(resourceRepository.findById(resourceId).orElseThrow(ResourceNotFoundException::new));
+        var resource = resourceRepository.findById(resourceId).orElseThrow(ResourceNotFoundException::new);
+        review.setResource(resource);
         review.setUser(user);
         applyRequest(review, request);
-        return ReviewResponse.from(reviewRepository.save(review));
+        Review saved = reviewRepository.save(review);
+
+        // Notify other reviewers of this resource
+        reviewRepository.findByResourceIdWithUserOrderByCreatedAtDesc(resourceId).stream()
+                .map(r -> r.getUser().getId())
+                .filter(uid -> !uid.equals(user.getId()))
+                .distinct()
+                .forEach(uid -> notificationService.notify(uid, "USER", "review",
+                        user.getFullName() + " a aussi laissé un avis sur " + resource.getName(), saved.getId()));
+
+        return ReviewResponse.from(saved);
     }
 
     @Transactional
@@ -102,6 +119,21 @@ public class ReviewService {
                 percentage(hard, count),
                 majority
         );
+    }
+
+    @Transactional(readOnly = true)
+    public Map<Long, Map<String, Object>> allStats() {
+        Map<Long, Map<String, Object>> result = new HashMap<>();
+        for (Object[] row : reviewRepository.findAverageRatingAndCountGrouped()) {
+            Long resourceId = (Long) row[0];
+            Double avg = (Double) row[1];
+            Long count = (Long) row[2];
+            Map<String, Object> stats = new HashMap<>();
+            stats.put("averageRating", Math.round(avg * 10.0) / 10.0);
+            stats.put("reviewCount", count);
+            result.put(resourceId, stats);
+        }
+        return result;
     }
 
     private void applyRequest(Review review, ReviewRequest request) {

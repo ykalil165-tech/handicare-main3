@@ -1,0 +1,79 @@
+@startuml sequence_review
+!theme plain
+skinparam defaultFontName "Computer Modern"
+skinparam defaultFontSize 12
+skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
+
+title **Diagramme de Séquence — Soumission d'un Avis (Review)**
+
+actor "Utilisateur" as User
+participant "Frontend\n(React)" as FE
+participant "ReviewController\n<<REST>>" as RC
+participant "ReviewService\n<<Service>>" as RS
+participant "AuthService\n<<Service>>" as AS
+database "ReviewRepository" as RR
+database "SupportResourceRepo" as SR
+participant "NotificationService\n<<Service>>" as NS
+
+User -> FE : Remplir formulaire avis\n(rating, comment, difficulté RDV)
+activate FE
+
+FE -> RC : POST /api/resources/{id}/reviews\n{rating, comment, appointmentDifficulty}\nHeader: Authorization: Bearer <token>
+activate RC
+
+RC -> RS : create(resourceId, ReviewRequest, authHeader)
+activate RS
+
+== Authentification ==
+RS -> AS : requireUser(authHeader)
+activate AS
+AS -> AS : extractToken(authHeader)
+AS -> AS : sessions.get(token)
+AS --> RS : AppUser
+deactivate AS
+
+== Vérification doublon ==
+RS -> RR : existsByResourceIdAndUserId(resourceId, userId)
+activate RR
+RR --> RS : boolean
+deactivate RR
+
+alt Avis déjà existant
+    RS --> RC : throw ReviewAlreadyExistsException
+    RC --> FE : 409 Conflict
+    FE --> User : "Vous avez déjà laissé un avis"
+else Pas d'avis existant
+    == Récupération ressource ==
+    RS -> SR : findById(resourceId)
+    activate SR
+    SR --> RS : SupportResource
+    deactivate SR
+
+    == Création de l'avis ==
+    RS -> RS : new Review(resource, user,\nrating, comment, difficulty)
+    RS -> RR : save(Review)
+    activate RR
+    RR --> RS : Review (avec id + timestamps)
+    deactivate RR
+
+    == Notification des autres reviewers ==
+    RS -> RR : findByResourceIdWithUser(resourceId)
+    activate RR
+    RR --> RS : List<Review>
+    deactivate RR
+    
+    loop Pour chaque autre reviewer
+        RS -> NS : notify(userId, "USER", "review",\nmessage, reviewId)
+    end
+
+    RS --> RC : ReviewResponse
+    deactivate RS
+    RC --> FE : 201 Created + ReviewResponse
+    deactivate RC
+    FE --> User : Avis affiché + confirmation
+end
+
+deactivate FE
+
+@enduml

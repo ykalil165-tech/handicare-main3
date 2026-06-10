@@ -1,60 +1,14 @@
-{
-  "city": "Casablanca, Maroc",
-  "delaySeconds": {
-    "min": 4,
-    "max": 9
-  },
-  "maxResultsPerQuery": 25,
-  "queries": [
-    {
-      "query": "associations handicap Casablanca",
-      "type": "ASSOCIATION",
-      "disabilityKeys": "motor,visual,hearing,cognitive,caregiver"
-    },
-    {
-      "query": "centres de rééducation Casablanca handicap",
-      "type": "REHABILITATION_CENTER",
-      "disabilityKeys": "motor,chronic"
-    },
-    {
-      "query": "hôpitaux accessibles Casablanca",
-      "type": "HOSPITAL",
-      "disabilityKeys": "motor,hearing,chronic"
-    },
-    {
-      "query": "pharmacies accessibles Casablanca",
-      "type": "PHARMACY",
-      "disabilityKeys": "motor,visual,chronic"
-    },
-    {
-      "query": "médecins spécialisés handicap Casablanca",
-      "type": "DOCTOR",
-      "disabilityKeys": "motor,visual,hearing,cognitive,chronic"
-    },
-    {
-      "query": "transport adapté handicap Casablanca",
-      "type": "TRANSPORT",
-      "disabilityKeys": "motor,caregiver"
-    },
-    {
-      "query": "centres auditifs Casablanca",
-      "type": "CABINET",
-      "disabilityKeys": "hearing"
-    },
-    {
-      "query": "centres visuels Casablanca",
-      "type": "CABINET",
-      "disabilityKeys": "visual"
-    },
-    {
-      "query": "services sociaux handicap Casablanca",
-      "type": "ADMINISTRATIVE_SUPPORT",
-      "disabilityKeys": "caregiver,cognitive,motor"
-    },
-    {
-      "query": "urgences médicales Casablanca",
-      "type": "EMERGENCY",
-      "disabilityKeys": "motor,visual,hearing,cognitive,chronic"
-    }
-  ]
-}
+[
+  "centres de rééducation Casablanca",
+  "associations handicap Casablanca",
+  "pharmacies accessibles Casablanca",
+  "médecins handicap Casablanca",
+  "transport adapté Casablanca",
+  "hôpitaux Casablanca",
+  "cabinets orthopédie Casablanca",
+  "urgences médicales Casablanca",
+  "aide administrative handicap Casablanca",
+  "kinésithérapie Casablanca",
+  "orthophoniste Casablanca",
+  "ergothérapie Casablanca"
+]

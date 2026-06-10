@@ -295,25 +295,26 @@ function stableMetric(seed, min, max) {
   return min + Math.floor(raw);
 }
 
-function getResourceReviewProfile(resource) {
+function getResourceReviewProfile(resource, reviewStats, favoriteCounts) {
   const id = Number(resource.id ?? 1);
-  const averageRating = Number(resource.averageRating ?? resource.googleRating ?? resource.rating ?? (resource.verified ? 4.4 : 3.8));
-  const reviewCount = Number(resource.reviewCount ?? resource.googleReviewCount ?? stableMetric(id + 2, 3, 45));
-  const favoriteCount = Number(resource.favoriteCount ?? resource.favorites ?? stableMetric(id + 7, 4, 120));
-  const viewCount = Number(resource.viewCount ?? resource.views ?? stableMetric(id + 13, 80, 980));
+  const stats = reviewStats?.[id] || {};
+  const averageRating = Number(stats.averageRating ?? resource.averageRating ?? resource.googleRating ?? resource.rating ?? 0);
+  const reviewCount = Number(stats.reviewCount ?? resource.reviewCount ?? resource.googleReviewCount ?? 0);
+  const favoriteCount = Number(favoriteCounts?.[id] ?? resource.favoriteCount ?? 0);
+  const viewCount = Number(resource.viewCount ?? resource.views ?? 0);
   const recentRank = resource.lastUpdated ? new Date(resource.lastUpdated).getTime() : id;
   const relevanceScore = (averageRating * 0.5) + (reviewCount * 0.2) + (favoriteCount * 0.2) + (viewCount * 0.1);
   return { averageRating, reviewCount, favoriteCount, viewCount, recentRank, relevanceScore };
 }
 
-function sortResources(resourcesToSort, sortBy) {
+function sortResources(resourcesToSort, sortBy, reviewStats, favoriteCounts) {
   const filtered = sortBy === 'verified'
     ? resourcesToSort.filter(resource => resource.verified)
     : resourcesToSort;
 
   return [...filtered].sort((a, b) => {
-    const aProfile = getResourceReviewProfile(a);
-    const bProfile = getResourceReviewProfile(b);
+    const aProfile = getResourceReviewProfile(a, reviewStats, favoriteCounts);
+    const bProfile = getResourceReviewProfile(b, reviewStats, favoriteCounts);
     if (sortBy === 'rating') return bProfile.averageRating - aProfile.averageRating;
     if (sortBy === 'popular') return bProfile.favoriteCount - aProfile.favoriteCount;
     if (sortBy === 'commented') return bProfile.reviewCount - aProfile.reviewCount;
@@ -353,14 +354,22 @@ function DifficultyBar({ label, value, tone }) {
   );
 }
 
-function ResourceMetricStrip({ resource }) {
-  const profile = getResourceReviewProfile(resource);
+function ResourceMetricStrip({ resource, reviewStats, favoriteCounts, isFavorited, onToggleFavorite, authToken }) {
+  const id = Number(resource.id ?? 1);
+  const stats = reviewStats?.[id] || {};
+  const averageRating = Number(stats.averageRating ?? resource.averageRating ?? resource.googleRating ?? resource.rating ?? 0);
+  const reviewCount = Number(stats.reviewCount ?? resource.reviewCount ?? resource.googleReviewCount ?? 0);
+  const favoriteCount = Number(favoriteCounts?.[id] ?? resource.favoriteCount ?? 0);
   return (
     <div className="resource-metrics" aria-label="Indicateurs de classement">
-      <span><strong>{profile.averageRating.toFixed(1)}</strong> note</span>
-      <span><strong>{profile.reviewCount}</strong> avis</span>
-      <span><strong>{profile.favoriteCount}</strong> favoris</span>
-      <span><strong>{profile.viewCount}</strong> vues</span>
+      <span><strong>{averageRating.toFixed(1)}</strong> note</span>
+      <span><strong>{reviewCount}</strong> avis</span>
+      <span>
+        {authToken && <button className={`fav-btn${isFavorited ? ' active' : ''}`} onClick={() => onToggleFavorite?.(id)} title={isFavorited ? 'Retirer des favoris' : 'Ajouter aux favoris'}>
+          {isFavorited ? '❤️' : '🤍'}
+        </button>}
+        <strong>{favoriteCount}</strong> favoris
+      </span>
     </div>
   );
 }
@@ -602,16 +611,25 @@ function ResourceReviews({ resource, authToken, currentAccount, onAuthExpired, t
   );
 }
 
-function CommunityPage({ posts, setPosts, joinedGroups, setJoinedGroups }) {
+function CommunityPage({ posts, setPosts, joinedGroups, setJoinedGroups, authToken }) {
   const [postDraft, setPostDraft] = useState('');
   const [selectedGroupId, setSelectedGroupId] = useState(communityGroups[0].id);
   const [activeTab, setActiveTab] = useState('wall');
+  const [myReactions, setMyReactions] = useState({});
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedTag, setSelectedTag] = useState('all');
   const [postTags, setPostTags] = useState(['RendezVous']);
   const [attachmentDraft, setAttachmentDraft] = useState('');
   const [commentDrafts, setCommentDrafts] = useState({});
   const activeGroup = communityGroups.find(group => group.id === selectedGroupId) ?? communityGroups[0];
+
+  // Fetch posts from backend
+  useEffect(() => {
+    fetch(`${API_URL}/community/posts`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (Array.isArray(data) && data.length > 0) setPosts(data); })
+      .catch(() => {});
+  }, []);
 
   const groupPosts = useMemo(() => posts.filter(post => post.handicapType === activeGroup.handicapType), [posts, activeGroup.handicapType]);
 
@@ -659,62 +677,85 @@ function CommunityPage({ posts, setPosts, joinedGroups, setJoinedGroups }) {
     setSearchTerm('');
   };
 
-  const publishPost = (event) => {
+  const publishPost = async (event) => {
     event.preventDefault();
     const content = postDraft.trim();
     if (!content) return;
-    const attachments = attachmentDraft
-      .split(',')
-      .map(item => item.trim())
-      .filter(Boolean)
-      .map((title, index) => ({
-        type: /\.(png|jpe?g|webp|gif)$/i.test(title) || title.toLowerCase().includes('photo') || title.toLowerCase().includes('capture') ? 'image' : 'document',
-        title,
-        url: index === 0 && title.toLowerCase().includes('photo')
-          ? 'https://images.unsplash.com/photo-1577896851231-70ef18881754?auto=format&fit=crop&w=900&q=80'
-          : undefined,
-      }));
-    setPosts(prev => [{
-      id: Date.now(),
-      author: 'Vous',
-      avatar: 'VO',
-      group: activeGroup.name,
-      groupId: activeGroup.id,
-      handicapType: activeGroup.handicapType,
-      time: "A l'instant",
-      content,
-      tags: postTags.length ? postTags : ['Accessibilite'],
-      attachments,
-      shares: 0,
-      saved: 0,
-      reactions: { like: 0, useful: 0, thanks: 0, solidarity: 0 },
-      comments: [],
-      similarPeople: [
-        { name: 'Ahmed', context: activeGroup.name },
-        { name: 'Fatima', context: activeGroup.description.split(',')[0] },
-        { name: 'Youssef', context: 'Situation similaire' },
-      ],
-    }, ...prev]);
+
+    if (authToken) {
+      try {
+        const res = await fetch(`${API_URL}/community/posts`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` },
+          body: JSON.stringify({
+            groupName: activeGroup.name,
+            groupId: activeGroup.id,
+            handicapType: activeGroup.handicapType,
+            content,
+            tags: postTags.length ? postTags : ['Accessibilite']
+          })
+        });
+        if (res.ok) {
+          const newPost = await res.json();
+          setPosts(prev => [newPost, ...prev]);
+        }
+      } catch {}
+    } else {
+      // Fallback local-only (not logged in)
+      setPosts(prev => [{
+        id: Date.now(),
+        author: 'Vous',
+        avatar: 'VO',
+        group: activeGroup.name,
+        groupId: activeGroup.id,
+        handicapType: activeGroup.handicapType,
+        time: new Date().toISOString(),
+        content,
+        tags: postTags.length ? postTags : ['Accessibilite'],
+        shares: 0,
+        reactions: { like: 0, useful: 0, thanks: 0, solidarity: 0 },
+        comments: [],
+      }, ...prev]);
+    }
     setPostDraft('');
     setAttachmentDraft('');
   };
 
   const reactToPost = (postId, reaction) => {
-    setPosts(prev => prev.map(post => (
-      post.id === postId
-        ? { ...post, reactions: { ...post.reactions, [reaction]: (post.reactions[reaction] ?? 0) + 1 } }
-        : post
-    )));
+    const key = `${postId}_${reaction}`;
+    const alreadyReacted = myReactions[key];
+    setMyReactions(prev => ({ ...prev, [key]: !alreadyReacted }));
+    fetch(`${API_URL}/community/posts/${postId}/react`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reaction, undo: alreadyReacted ? 'true' : 'false' })
+    }).then(r => r.ok ? r.json() : null).then(data => {
+      if (data) setPosts(prev => prev.map(post => post.id === postId ? { ...post, reactions: data } : post));
+    }).catch(() => {});
   };
 
-  const addComment = (postId) => {
+  const addComment = async (postId) => {
     const text = (commentDrafts[postId] ?? '').trim();
     if (!text) return;
-    setPosts(prev => prev.map(post => (
-      post.id === postId
-        ? { ...post, comments: [...post.comments, { id: Date.now(), author: 'Vous', text }] }
-        : post
-    )));
+    if (authToken) {
+      try {
+        const res = await fetch(`${API_URL}/community/posts/${postId}/comments`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` },
+          body: JSON.stringify({ text })
+        });
+        if (res.ok) {
+          const comment = await res.json();
+          setPosts(prev => prev.map(post => post.id === postId ? { ...post, comments: [...(post.comments || []), comment] } : post));
+        }
+      } catch {}
+    } else {
+      setPosts(prev => prev.map(post => (
+        post.id === postId
+          ? { ...post, comments: [...(post.comments || []), { id: Date.now(), author: 'Vous', text }] }
+          : post
+      )));
+    }
     setCommentDrafts(prev => ({ ...prev, [postId]: '' }));
   };
 
@@ -753,13 +794,6 @@ function CommunityPage({ posts, setPosts, joinedGroups, setJoinedGroups }) {
                   <strong>{group.name}</strong>
                   <span>{group.members} membres - {livePosts} publications</span>
                 </button>
-                <button
-                  type="button"
-                  className={joined ? 'join-button joined' : 'join-button'}
-                  onClick={() => setJoinedGroups(prev => joined ? prev.filter(id => id !== group.id) : [...prev, group.id])}
-                >
-                  {joined ? 'Rejoint' : 'Rejoindre'}
-                </button>
               </div>
             );
           })}
@@ -795,7 +829,7 @@ function CommunityPage({ posts, setPosts, joinedGroups, setJoinedGroups }) {
               <div className="composer-avatar">VO</div>
               <div>
                 <strong>Publier dans {activeGroup.name}</strong>
-                <span>Visible uniquement pour publication.handicapType === "{activeGroup.handicapType}"</span>
+                <span>Visible uniquement par les membres du groupe</span>
               </div>
             </div>
             <textarea
@@ -874,10 +908,10 @@ function CommunityPage({ posts, setPosts, joinedGroups, setJoinedGroups }) {
                 <span>{post.shares ?? 0} partages</span>
               </div>
               <div className="reaction-row">
-                <button type="button" onClick={() => reactToPost(post.id, 'like')}><ThumbsUp size={15} /> J'aime</button>
-                <button type="button" onClick={() => reactToPost(post.id, 'useful')}><HeartHandshake size={15} /> Utile</button>
-                <button type="button" onClick={() => reactToPost(post.id, 'thanks')}>Merci</button>
-                <button type="button" onClick={() => reactToPost(post.id, 'solidarity')}>Solidaire</button>
+                <button type="button" className={myReactions[`${post.id}_like`] ? 'reacted' : ''} onClick={() => reactToPost(post.id, 'like')}><ThumbsUp size={15} /> J'aime</button>
+                <button type="button" className={myReactions[`${post.id}_useful`] ? 'reacted' : ''} onClick={() => reactToPost(post.id, 'useful')}><HeartHandshake size={15} /> Utile</button>
+                <button type="button" className={myReactions[`${post.id}_thanks`] ? 'reacted' : ''} onClick={() => reactToPost(post.id, 'thanks')}>Merci</button>
+                <button type="button" className={myReactions[`${post.id}_solidarity`] ? 'reacted' : ''} onClick={() => reactToPost(post.id, 'solidarity')}>Solidaire</button>
                 <button type="button" onClick={() => sharePost(post.id)}><Share2 size={15} /> Partager</button>
                 <button type="button" onClick={() => savePost(post.id)}><Bookmark size={15} /> Enregistrer</button>
               </div>
@@ -926,86 +960,237 @@ function CommunityPage({ posts, setPosts, joinedGroups, setJoinedGroups }) {
   );
 }
 
-function ChatPage({ conversations, setConversations }) {
-  const [activeId, setActiveId] = useState(conversations[0]?.id ?? null);
+function ChatPage({ authToken }) {
+  const [conversations, setConversations] = useState([]);
+  const [contacts, setContacts] = useState([]);
+  const [activeConv, setActiveConv] = useState(null); // {partnerId, partnerType, partnerName}
+  const [messages, setMessages] = useState([]);
   const [messageDraft, setMessageDraft] = useState('');
-  const activeConversation = conversations.find(conversation => conversation.id === activeId) ?? conversations[0];
+  const [searchTerm, setSearchTerm] = useState('');
+  const [showNewChat, setShowNewChat] = useState(false);
 
-  const sendMessage = (event) => {
+  // Load conversations
+  useEffect(() => {
+    if (!authToken) return;
+    fetch(`${API_URL}/chat/conversations`, { headers: { Authorization: `Bearer ${authToken}` } })
+      .then(r => r.ok ? r.json() : []).then(setConversations).catch(() => {});
+  }, [authToken]);
+
+  // Load contacts for new chat
+  useEffect(() => {
+    if (!authToken) return;
+    fetch(`${API_URL}/chat/contacts`, { headers: { Authorization: `Bearer ${authToken}` } })
+      .then(r => r.ok ? r.json() : []).then(setContacts).catch(() => {});
+  }, [authToken]);
+
+  // Load messages when active conversation changes
+  useEffect(() => {
+    if (!authToken || !activeConv) { setMessages([]); return; }
+    fetch(`${API_URL}/chat/messages/${activeConv.partnerType}/${activeConv.partnerId}`, {
+      headers: { Authorization: `Bearer ${authToken}` }
+    }).then(r => r.ok ? r.json() : []).then(setMessages).catch(() => {});
+  }, [authToken, activeConv]);
+
+  const sendMessage = async (event) => {
     event.preventDefault();
     const text = messageDraft.trim();
-    if (!text || !activeConversation) return;
-    setConversations(prev => prev.map(conversation => (
-      conversation.id === activeConversation.id
-        ? { ...conversation, last: text, messages: [...conversation.messages, text], unread: 0 }
-        : conversation
-    )));
+    if (!text || !activeConv) return;
+    try {
+      const res = await fetch(`${API_URL}/chat/send`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` },
+        body: JSON.stringify({ receiverId: activeConv.partnerId, receiverType: activeConv.partnerType, content: text })
+      });
+      if (res.ok) {
+        const msg = await res.json();
+        setMessages(prev => [...prev, msg]);
+        setConversations(prev => {
+          const key = `${activeConv.partnerType}_${activeConv.partnerId}`;
+          const exists = prev.find(c => `${c.partnerType}_${c.partnerId}` === key);
+          if (exists) return prev.map(c => `${c.partnerType}_${c.partnerId}` === key ? { ...c, lastMessage: text, lastTime: msg.createdAt } : c);
+          return [{ partnerId: activeConv.partnerId, partnerType: activeConv.partnerType, partnerName: activeConv.partnerName, lastMessage: text, lastTime: msg.createdAt, unread: 0 }, ...prev];
+        });
+      }
+    } catch {}
     setMessageDraft('');
   };
+
+  const startChat = (contact) => {
+    setActiveConv({ partnerId: contact.id, partnerType: contact.type, partnerName: contact.name });
+    setShowNewChat(false);
+  };
+
+  const filteredConversations = conversations.filter(c =>
+    c.partnerName.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  const filteredContacts = contacts.filter(c =>
+    c.name.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  if (!authToken) {
+    return (
+      <section className="chat-section">
+        <div className="section-heading">
+          <p className="eyebrow">Messagerie</p>
+          <h1>Chat privé et associations</h1>
+        </div>
+        <p className="login-review-note">Connectez-vous pour accéder à la messagerie.</p>
+      </section>
+    );
+  }
 
   return (
     <section className="chat-section">
       <div className="section-heading">
         <p className="eyebrow">Messagerie</p>
-        <h1>Chat prive et associations</h1>
+        <h1>Chat privé et associations</h1>
       </div>
       <div className="chat-shell">
         <aside className="conversation-list">
-          {conversations.map(conversation => (
+          <div className="chat-search">
+            <input
+              value={searchTerm}
+              onChange={e => setSearchTerm(e.target.value)}
+              placeholder="Rechercher une conversation..."
+            />
+            <button type="button" className="new-chat-btn" onClick={() => setShowNewChat(!showNewChat)} title="Nouvelle conversation">+</button>
+          </div>
+          {showNewChat && (
+            <div className="contacts-list">
+              <small className="contacts-label">Contacts disponibles</small>
+              {filteredContacts.map(contact => (
+                <button key={`${contact.type}_${contact.id}`} type="button" onClick={() => startChat(contact)}>
+                  <strong>{contact.name}</strong>
+                  <span>{contact.type === 'ASSOCIATION' ? (contact.platformEmail || 'Association') : 'Utilisateur'}</span>
+                </button>
+              ))}
+              {filteredContacts.length === 0 && <small>Aucun contact trouvé</small>}
+            </div>
+          )}
+          {filteredConversations.map(conv => (
             <button
-              key={conversation.id}
+              key={`${conv.partnerType}_${conv.partnerId}`}
               type="button"
-              className={activeConversation?.id === conversation.id ? 'active-conversation' : ''}
-              onClick={() => {
-                setActiveId(conversation.id);
-                setConversations(prev => prev.map(item => item.id === conversation.id ? { ...item, unread: 0 } : item));
-              }}
+              className={activeConv?.partnerId === conv.partnerId && activeConv?.partnerType === conv.partnerType ? 'active-conversation' : ''}
+              onClick={() => setActiveConv({ partnerId: conv.partnerId, partnerType: conv.partnerType, partnerName: conv.partnerName })}
             >
-              <strong>{conversation.name}</strong>
-              <span>{conversation.type}</span>
-              <small>{conversation.last}</small>
-              {conversation.unread > 0 && <b>{conversation.unread}</b>}
+              <strong>{conv.partnerName}</strong>
+              <span>{conv.partnerType === 'ASSOCIATION' ? 'Association' : 'Utilisateur'}</span>
+              <small>{conv.lastMessage}</small>
+              {conv.unread > 0 && <b>{conv.unread}</b>}
             </button>
           ))}
+          {!showNewChat && filteredConversations.length === 0 && <p className="empty-community">Aucune conversation</p>}
         </aside>
         <div className="chat-window">
-          <div className="chat-window-header">
-            <MessageCircle size={20} />
-            <div>
-              <strong>{activeConversation?.name}</strong>
-              <span>Historique des conversations</span>
+          {activeConv ? (
+            <>
+              <div className="chat-window-header">
+                <MessageCircle size={20} />
+                <div>
+                  <strong>{activeConv.partnerName}</strong>
+                  <span>{activeConv.partnerType === 'ASSOCIATION' ? 'Association' : 'Utilisateur'}</span>
+                </div>
+              </div>
+              <div className="message-list">
+                {messages.map(msg => (
+                  <p key={msg.id} className={msg.mine ? 'message mine' : 'message theirs'}>{msg.content}</p>
+                ))}
+                {messages.length === 0 && <p className="empty-community">Commencez la conversation...</p>}
+              </div>
+              <form className="message-form" onSubmit={sendMessage}>
+                <input value={messageDraft} onChange={e => setMessageDraft(e.target.value)} placeholder="Écrire un message..." />
+                <button type="submit" className="primary-action"><Send size={16} /> Envoyer</button>
+              </form>
+            </>
+          ) : (
+            <div className="chat-placeholder">
+              <MessageCircle size={48} />
+              <p>Sélectionnez une conversation ou démarrez un nouveau chat</p>
             </div>
-          </div>
-          <div className="message-list">
-            {activeConversation?.messages.map((message, index) => (
-              <p key={`${activeConversation.id}-${index}`} className={index % 2 === 0 ? 'message theirs' : 'message mine'}>{message}</p>
-            ))}
-          </div>
-          <form className="message-form" onSubmit={sendMessage}>
-            <input value={messageDraft} onChange={event => setMessageDraft(event.target.value)} placeholder="Ecrire un message..." />
-            <button type="submit" className="primary-action"><Send size={16} /> Envoyer</button>
-          </form>
+          )}
         </div>
       </div>
     </section>
   );
 }
 
-function NotificationsPage({ notifications }) {
+function NotificationsPage({ authToken }) {
+  const [notifications, setNotifications] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!authToken) { setLoading(false); return; }
+    fetch(`${API_URL}/notifications`, { headers: { Authorization: `Bearer ${authToken}` } })
+      .then(r => r.ok ? r.json() : [])
+      .then(data => { setNotifications(data); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, [authToken]);
+
+  const markRead = async (id) => {
+    await fetch(`${API_URL}/notifications/${id}/read`, {
+      method: 'PATCH', headers: { Authorization: `Bearer ${authToken}` }
+    }).catch(() => {});
+    setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
+  };
+
+  const markAllRead = async () => {
+    await fetch(`${API_URL}/notifications/read-all`, {
+      method: 'PATCH', headers: { Authorization: `Bearer ${authToken}` }
+    }).catch(() => {});
+    setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+  };
+
+  const formatTime = (dateStr) => {
+    if (!dateStr) return '';
+    const date = new Date(dateStr);
+    const now = new Date();
+    const diffMs = now - date;
+    const diffMin = Math.floor(diffMs / 60000);
+    if (diffMin < 1) return "À l'instant";
+    if (diffMin < 60) return `Il y a ${diffMin} min`;
+    const diffH = Math.floor(diffMin / 60);
+    if (diffH < 24) return `Il y a ${diffH}h`;
+    return date.toLocaleDateString('fr-FR');
+  };
+
+  if (!authToken) {
+    return (
+      <section className="notifications-section">
+        <div className="section-heading">
+          <p className="eyebrow">Notifications</p>
+          <h1>Activité récente</h1>
+        </div>
+        <p className="login-review-note">Connectez-vous pour voir vos notifications.</p>
+      </section>
+    );
+  }
+
   return (
     <section className="notifications-section">
       <div className="section-heading">
         <p className="eyebrow">Notifications</p>
-        <h1>Activite recente</h1>
+        <h1>Activité récente</h1>
+        {notifications.some(n => !n.read) && (
+          <button type="button" className="secondary-action" onClick={markAllRead}>Tout marquer comme lu</button>
+        )}
       </div>
       <div className="notification-list">
+        {loading && <p>Chargement...</p>}
+        {!loading && notifications.length === 0 && <p className="empty-community">Aucune notification pour le moment.</p>}
         {notifications.map(notification => (
-          <article key={notification.id} className="notification-card">
+          <article
+            key={notification.id}
+            className={`notification-card${notification.read ? '' : ' unread'}`}
+            onClick={() => !notification.read && markRead(notification.id)}
+          >
             <Bell size={18} />
             <div>
               <strong>{notification.text}</strong>
-              <span>{notification.time}</span>
+              <span>{formatTime(notification.createdAt)}</span>
             </div>
+            {!notification.read && <span className="notif-dot" />}
           </article>
         ))}
       </div>
@@ -1404,7 +1589,7 @@ function App() {
   const [communityPosts, setCommunityPosts] = useState(initialCommunityPosts);
   const [joinedGroups, setJoinedGroups] = useState(['motor', 'parents']);
   const [conversations, setConversations] = useState(initialConversations);
-  const [notifications] = useState(initialNotifications);
+  const [unreadNotifCount, setUnreadNotifCount] = useState(0);
 
   const toggleNeed = (need) => setSelectedNeeds(prev =>
     prev.includes(need) ? prev.filter(n => n !== need) : [...prev, need]
@@ -1440,6 +1625,42 @@ function App() {
   const [registerForm, setRegisterForm] = useState({ fullName: '', email: '', password: '', confirmPassword: '', preferredNeed: 'motor' });
   const [registerError, setRegisterError] = useState('');
   const [registerSuccess, setRegisterSuccess] = useState(false);
+  const [changePasswordForm, setChangePasswordForm] = useState({ currentPassword: '', newPassword: '', confirmNewPassword: '' });
+  const [changePasswordError, setChangePasswordError] = useState('');
+  const [changePasswordSuccess, setChangePasswordSuccess] = useState('');
+
+  // Favorites & review stats
+  const [userFavorites, setUserFavorites] = useState([]);
+  const [favoriteCounts, setFavoriteCounts] = useState({});
+  const [reviewStats, setReviewStats] = useState({});
+
+  const handleChangePassword = async (e) => {
+    e.preventDefault();
+    setChangePasswordError('');
+    setChangePasswordSuccess('');
+    if (changePasswordForm.newPassword !== changePasswordForm.confirmNewPassword) {
+      setChangePasswordError(t('errors.passwordMismatch')); return;
+    }
+    if (changePasswordForm.newPassword.length < 4) {
+      setChangePasswordError(t('errors.passwordTooShort')); return;
+    }
+    try {
+      const res = await fetch(`${API_URL}/auth/change-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` },
+        body: JSON.stringify({ currentPassword: changePasswordForm.currentPassword, newPassword: changePasswordForm.newPassword })
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        setChangePasswordError(data?.error || t('errors.serverError'));
+        return;
+      }
+      setChangePasswordSuccess(t('auth.passwordChanged'));
+      setChangePasswordForm({ currentPassword: '', newPassword: '', confirmNewPassword: '' });
+    } catch {
+      setChangePasswordError(t('errors.serverError'));
+    }
+  };
 
   const handleRegister = async (e) => {
     e.preventDefault();
@@ -1500,7 +1721,41 @@ function App() {
       .then(res => res.ok ? res.json() : null)
       .then(data => { if (Array.isArray(data)) setResources(data.map(markApiResource)); })
       .catch(() => {});
+    // Fetch review stats and favorite counts
+    fetch(`${API_URL}/reviews/stats/all`).then(r => r.ok ? r.json() : {}).then(setReviewStats).catch(() => {});
+    fetch(`${API_URL}/favorites/counts`).then(r => r.ok ? r.json() : {}).then(setFavoriteCounts).catch(() => {});
   }, []);
+
+  // Fetch user favorites when logged in
+  useEffect(() => {
+    if (!authToken) { setUserFavorites([]); return; }
+    fetch(`${API_URL}/favorites`, { headers: { Authorization: `Bearer ${authToken}` } })
+      .then(r => r.ok ? r.json() : []).then(setUserFavorites).catch(() => {});
+  }, [authToken]);
+
+  // Fetch unread notification count (poll every 30s)
+  useEffect(() => {
+    if (!authToken) { setUnreadNotifCount(0); return; }
+    const fetchCount = () => fetch(`${API_URL}/notifications/unread-count`, { headers: { Authorization: `Bearer ${authToken}` } })
+      .then(r => r.ok ? r.json() : { count: 0 }).then(d => setUnreadNotifCount(d.count)).catch(() => {});
+    fetchCount();
+    const interval = setInterval(fetchCount, 30000);
+    return () => clearInterval(interval);
+  }, [authToken]);
+
+  const toggleFavorite = async (resourceId) => {
+    if (!authToken) return;
+    try {
+      const res = await fetch(`${API_URL}/favorites/${resourceId}`, {
+        method: 'POST', headers: { Authorization: `Bearer ${authToken}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setFavoriteCounts(prev => ({ ...prev, [resourceId]: data.favoriteCount }));
+        setUserFavorites(prev => data.favorited ? [...prev, resourceId] : prev.filter(id => id !== resourceId));
+      }
+    } catch {}
+  };
 
   const [assocForm, setAssocForm] = useState({
     associationName: '', email: '', passwordHash: '', confirmPassword: '',
@@ -1601,7 +1856,7 @@ function App() {
           </button>
           <button className={section === 'notifications' ? 'active-nav nav-badge-button' : 'nav-badge-button'} onClick={() => setSection('notifications')} aria-label="Notifications">
             <Bell size={17} />
-            <span className="nav-badge">{notifications.length}</span>
+            {unreadNotifCount > 0 && <span className="nav-badge">{unreadNotifCount}</span>}
           </button>
           {currentAdmin?.accountType === 'ADMIN' && (
             <>
@@ -1672,6 +1927,17 @@ function App() {
                   <button className="primary-action" style={{width:'100%'}} onClick={logout}>
                     {t('common.logout')}
                   </button>
+                  <div className="change-password-section" style={{marginTop:'1.5rem', borderTop:'1px solid var(--line)', paddingTop:'1rem'}}>
+                    <h4 style={{margin:'0 0 0.75rem', fontSize:'0.95rem'}}>🔒 {t('auth.changePassword')}</h4>
+                    <form className="auth-form" onSubmit={handleChangePassword} style={{gap:'0.5rem'}}>
+                      <input type="password" placeholder={t('auth.currentPassword')} value={changePasswordForm.currentPassword} onChange={e => setChangePasswordForm(f => ({...f, currentPassword: e.target.value}))} required />
+                      <input type="password" placeholder={t('auth.newPassword')} value={changePasswordForm.newPassword} onChange={e => setChangePasswordForm(f => ({...f, newPassword: e.target.value}))} required minLength={4} />
+                      <input type="password" placeholder={t('auth.confirmNewPassword')} value={changePasswordForm.confirmNewPassword} onChange={e => setChangePasswordForm(f => ({...f, confirmNewPassword: e.target.value}))} required minLength={4} />
+                      {changePasswordError && <p className="form-error">{changePasswordError}</p>}
+                      {changePasswordSuccess && <p className="form-success" style={{color:'#060', background:'#efe', padding:'0.4rem 0.6rem', borderRadius:'6px', fontSize:'0.85rem'}}>{changePasswordSuccess}</p>}
+                      <button type="submit" className="primary-action" style={{width:'100%'}}>{t('auth.changePassword')}</button>
+                    </form>
+                  </div>
                 </div>
               ) : (
                 <div className="auth-card">
@@ -1905,7 +2171,7 @@ function App() {
                     .filter(r => selectedType === 'ALL' || r.type === selectedType)
                     .filter(r => resourceMatchesNeed(r, selectedNeed))
                     .filter(r => selectedDistrict === 'all' || r.district === selectedDistrict || (r.address ?? '').toLowerCase().includes(selectedDistrict.toLowerCase().replace('-', ' ')))
-                    .filter(r => !query || r.name.toLowerCase().includes(query.toLowerCase()) || (r.description ?? '').toLowerCase().includes(query.toLowerCase())), selectedSort)
+                    .filter(r => !query || r.name.toLowerCase().includes(query.toLowerCase()) || (r.description ?? '').toLowerCase().includes(query.toLowerCase())), selectedSort, reviewStats, favoriteCounts)
                     .map(resource => (
                       <div key={resource.id} className="resource-card">
                         <div className="resource-card-header">
@@ -1914,7 +2180,7 @@ function App() {
                         </div>
                         <h3>{resource.name}</h3>
                         <p>{resource.description}</p>
-                        <ResourceMetricStrip resource={resource} />
+                        <ResourceMetricStrip resource={resource} reviewStats={reviewStats} favoriteCounts={favoriteCounts} isFavorited={userFavorites.includes(resource.id)} onToggleFavorite={toggleFavorite} authToken={authToken} />
                         <dl>
                           <dt><MapPin size={13} /> {t('resources.address')}</dt>
                           <dd>{resource.address}</dd>
@@ -2083,15 +2349,16 @@ function App() {
             setPosts={setCommunityPosts}
             joinedGroups={joinedGroups}
             setJoinedGroups={setJoinedGroups}
+            authToken={authToken}
           />
         )}
 
         {section === 'chat' && (
-          <ChatPage conversations={conversations} setConversations={setConversations} />
+          <ChatPage authToken={authToken} />
         )}
 
         {section === 'notifications' && (
-          <NotificationsPage notifications={notifications} />
+          <NotificationsPage authToken={authToken} />
         )}
 
         {section === 'resources' && (
@@ -2164,7 +2431,7 @@ function App() {
                   .filter(r => selectedType === 'ALL' || r.type === selectedType)
                   .filter(r => selectedDistrict === 'all' || (r.district === selectedDistrict) || (r.address ?? '').toLowerCase().includes(selectedDistrict.toLowerCase().replace('-', ' ')))
                   .filter(r => !query || r.name.toLowerCase().includes(query.toLowerCase()) || (r.description ?? '').toLowerCase().includes(query.toLowerCase()))
-                  .filter(r => selectedNeeds.length === 0 || selectedNeeds.some(n => (r.disabilityKeys ?? '').toLowerCase().includes(n))), selectedSort);
+                  .filter(r => selectedNeeds.length === 0 || selectedNeeds.some(n => (r.disabilityKeys ?? '').toLowerCase().includes(n))), selectedSort, reviewStats, favoriteCounts);
 
                 if (filtered.length === 0) return (
                   <div className="empty-state"><p>{t('resources.noResources')}</p></div>
@@ -2194,7 +2461,7 @@ function App() {
                     {resource.description && (
                       <p className="resource-description">{resource.description}</p>
                     )}
-                    <ResourceMetricStrip resource={resource} />
+                    <ResourceMetricStrip resource={resource} reviewStats={reviewStats} favoriteCounts={favoriteCounts} isFavorited={userFavorites.includes(resource.id)} onToggleFavorite={toggleFavorite} authToken={authToken} />
 
                     <div className="resource-details">
                       {resource.address && (

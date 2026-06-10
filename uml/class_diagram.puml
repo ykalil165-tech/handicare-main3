@@ -1,0 +1,322 @@
+@startuml class_diagram
+!theme plain
+skinparam defaultFontName "Computer Modern"
+skinparam defaultFontSize 11
+skinparam classAttributeIconSize 0
+skinparam linetype ortho
+
+title **Diagramme de Classes — Handicare**
+
+package "auth" {
+    class AuthService {
+        - sessions : Map<String, SessionAccount>
+        - passwordEncoder : BCryptPasswordEncoder
+        - secureRandom : SecureRandom
+        --
+        + login(request : AuthRequest) : AuthResponse
+        + register(request : RegisterRequest) : AuthResponse
+        + requireUser(authHeader : String) : AppUser
+        + requireAdmin(authHeader : String) : AdminUser
+        + requireAccount(authHeader : String) : AuthResponse
+        + isAdmin(authHeader : String) : boolean
+        + changePassword(authHeader, request) : void
+        + logout(authHeader : String) : void
+        - hashPassword(password : String) : String
+        - createToken() : String
+        - extractToken(authHeader : String) : String
+    }
+
+    class AuthController <<REST>> {
+        + login(request : AuthRequest) : AuthResponse
+        + register(request : RegisterRequest) : AuthResponse
+        + me(authHeader : String) : AuthResponse
+        + logout(authHeader : String) : void
+        + changePassword(authHeader, request) : ResponseEntity
+    }
+
+    class AuthRequest <<record>> {
+        + email : String
+        + password : String
+    }
+
+    class RegisterRequest <<record>> {
+        + fullName : String
+        + email : String
+        + password : String
+        + preferredNeed : String
+    }
+
+    class AuthResponse <<record>> {
+        + token : String
+        + id : Long
+        + fullName : String
+        + email : String
+        + role : String
+    }
+}
+
+package "user" {
+    class AppUser <<Entity>> {
+        - id : Long
+        - fullName : String
+        - email : String
+        - preferredNeed : String
+        - passwordHash : String
+        --
+        + getId() : Long
+        + getFullName() : String
+        + getEmail() : String
+        + getPreferredNeed() : String
+    }
+
+    interface AppUserRepository <<JpaRepository>> {
+        + findByEmailIgnoreCase(email) : Optional<AppUser>
+    }
+}
+
+package "admin" {
+    class AdminUser <<Entity>> {
+        - id : Long
+        - fullName : String
+        - email : String
+        - role : String
+        - principal : Boolean
+        - passwordHash : String
+        --
+        + getId() : Long
+        + getFullName() : String
+        + getEmail() : String
+        + getRole() : String
+    }
+
+    interface AdminUserRepository <<JpaRepository>> {
+        + findByEmailIgnoreCase(email) : Optional<AdminUser>
+    }
+}
+
+package "resource" {
+    class SupportResource <<Entity>> {
+        - id : Long
+        - name : String
+        - type : ResourceType
+        - disabilityKeys : String
+        - description : String
+        - address : String
+        - latitude : Double
+        - longitude : Double
+        - phone : String
+        - email : String
+        - website : String
+        - openingHours : String
+        - accessibilityScore : Integer
+        - accessibilityFeatures : String
+        - verified : Boolean
+        - services : String
+        - googleRating : Double
+        --
+        + getId() : Long
+        + getName() : String
+        + getType() : ResourceType
+    }
+
+    enum ResourceType {
+        HOSPITAL
+        CLINIC
+        ASSOCIATION
+        SCHOOL
+        CENTER
+        OTHER
+    }
+
+    interface SupportResourceRepository <<JpaRepository>> {
+    }
+}
+
+package "review" {
+    class Review <<Entity>> {
+        - id : Long
+        - rating : Integer
+        - comment : String
+        - appointmentDifficulty : AppointmentDifficulty
+        - createdAt : LocalDateTime
+        - updatedAt : LocalDateTime
+        --
+        + getId() : Long
+        + getRating() : Integer
+        + getComment() : String
+    }
+
+    enum AppointmentDifficulty {
+        EASY
+        MODERATE
+        DIFFICULT
+    }
+
+    class ReviewService {
+        + reviews(resourceId) : List<ReviewResponse>
+        + create(resourceId, request, authHeader) : ReviewResponse
+        + update(reviewId, request, authHeader) : ReviewResponse
+        + delete(reviewId, authHeader) : void
+        + stats(resourceId) : ReviewStatsResponse
+        + allStats() : Map
+    }
+
+    class ReviewController <<REST>> {
+        + reviews(id) : List<ReviewResponse>
+        + stats(id) : ReviewStatsResponse
+        + allStats() : Map
+        + create(id, request, authHeader) : ReviewResponse
+        + update(id, request, authHeader) : ReviewResponse
+        + delete(id, authHeader) : void
+    }
+
+    interface ReviewRepository <<JpaRepository>> {
+        + findByResourceIdWithUserOrderByCreatedAtDesc(resourceId) : List<Review>
+        + existsByResourceIdAndUserId(resourceId, userId) : boolean
+    }
+}
+
+package "favorite" {
+    class Favorite <<Entity>> {
+        - id : Long
+        - createdAt : LocalDateTime
+        --
+        + getId() : Long
+        + getUser() : AppUser
+        + getResource() : SupportResource
+    }
+
+    interface FavoriteRepository <<JpaRepository>> {
+    }
+}
+
+package "community" {
+    class CommunityPost <<Entity>> {
+        - id : Long
+        - author : String
+        - groupName : String
+        - handicapType : String
+        - content : String
+        - tags : String
+        - likesCount : int
+        - usefulCount : int
+        - thanksCount : int
+        - authorId : Long
+        - authorType : String
+        - createdAt : LocalDateTime
+        --
+        + getId() : Long
+        + getContent() : String
+    }
+
+    class CommunityComment <<Entity>> {
+        - id : Long
+        - content : String
+        - authorId : Long
+        - authorType : String
+        - createdAt : LocalDateTime
+        --
+        + getId() : Long
+        + getContent() : String
+    }
+}
+
+package "chat" {
+    class Message <<Entity>> {
+        - id : Long
+        - senderId : Long
+        - senderType : String
+        - receiverId : Long
+        - receiverType : String
+        - content : String
+        - read : boolean
+        - createdAt : LocalDateTime
+        --
+        + getId() : Long
+        + getContent() : String
+        + isRead() : boolean
+    }
+}
+
+package "notification" {
+    class Notification <<Entity>> {
+        - id : Long
+        - userId : Long
+        - userType : String
+        - type : String
+        - text : String
+        - relatedId : Long
+        - read : boolean
+        - createdAt : LocalDateTime
+        --
+        + getId() : Long
+        + getText() : String
+        + isRead() : boolean
+    }
+
+    class NotificationService {
+        + notify(userId, userType, type, text, relatedId) : void
+        + getNotifications(userId, userType) : List<Notification>
+        + markAsRead(id) : void
+    }
+}
+
+package "association" {
+    class AssociationAccount <<Entity>> {
+        - id : Long
+        - associationName : String
+        - email : String
+        - passwordHash : String
+        - phone : String
+        - address : String
+        - latitude : Double
+        - longitude : Double
+        - disabilityKeys : String
+        - services : String
+        - description : String
+        - contactPerson : String
+        - status : AssociationStatus
+        --
+        + getId() : Long
+        + getAssociationName() : String
+        + getStatus() : AssociationStatus
+    }
+
+    enum AssociationStatus {
+        PENDING
+        APPROVED
+        REJECTED
+    }
+}
+
+' ===== Relations =====
+
+' Review relations
+Review "*" --> "1" SupportResource : resource
+Review "*" --> "1" AppUser : user
+Review --> AppointmentDifficulty
+
+' Favorite relations
+Favorite "*" --> "1" AppUser : user
+Favorite "*" --> "1" SupportResource : resource
+
+' CommunityComment -> CommunityPost
+CommunityComment "*" --> "1" CommunityPost : post
+
+' SupportResource -> ResourceType
+SupportResource --> ResourceType
+
+' AssociationAccount -> AssociationStatus
+AssociationAccount --> AssociationStatus
+
+' Service dependencies
+AuthService --> AppUserRepository
+AuthService --> AdminUserRepository
+ReviewService --> ReviewRepository
+ReviewService --> SupportResourceRepository
+ReviewService --> AuthService
+ReviewService --> NotificationService
+AuthController --> AuthService
+ReviewController --> ReviewService
+
+@enduml

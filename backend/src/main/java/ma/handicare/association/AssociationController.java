@@ -41,7 +41,20 @@ public class AssociationController {
     public AssociationAccount register(@Valid @RequestBody AssociationAccount account) {
         account.setPasswordHash(authService.hashPassword(account.getPasswordHash()));
         account.setStatus(AssociationStatus.PENDING);
+        account.setPlatformEmail(generatePlatformEmail(account.getAssociationName()));
         return associationRepository.save(account);
+    }
+
+    private String generatePlatformEmail(String associationName) {
+        String slug = associationName.toLowerCase()
+                .replaceAll("[àâä]", "a").replaceAll("[éèêë]", "e")
+                .replaceAll("[îï]", "i").replaceAll("[ôö]", "o").replaceAll("[ùûü]", "u")
+                .replaceAll("[^a-z0-9]+", "-").replaceAll("^-|-$", "");
+        String base = slug + "@handicare.com";
+        if (!associationRepository.existsByPlatformEmail(base)) return base;
+        int counter = 2;
+        while (associationRepository.existsByPlatformEmail(slug + counter + "@handicare.com")) counter++;
+        return slug + counter + "@handicare.com";
     }
 
     @GetMapping("/pending")

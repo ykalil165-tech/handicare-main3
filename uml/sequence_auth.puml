@@ -1,0 +1,56 @@
+@startuml sequence_auth
+!theme plain
+skinparam defaultFontName "Computer Modern"
+skinparam defaultFontSize 12
+skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
+
+title **Diagramme de Séquence — Authentification (Login)**
+
+actor "Utilisateur" as User
+participant "Frontend\n(React)" as FE
+participant "AuthController\n<<REST>>" as AC
+participant "AuthService\n<<Service>>" as AS
+database "AdminUserRepository" as AR
+database "AppUserRepository" as UR
+
+User -> FE : Saisir email + mot de passe
+activate FE
+
+FE -> AC : POST /api/auth/login\n{email, password}
+activate AC
+
+AC -> AS : login(AuthRequest)
+activate AS
+
+AS -> AR : findByEmailIgnoreCase(email)
+activate AR
+AR --> AS : Optional<AdminUser>
+deactivate AR
+
+alt Admin trouvé ET mot de passe correct
+    AS -> AS : createToken()
+    AS -> AS : sessions.put(token, {id, "ADMIN"})
+    AS --> AC : AuthResponse(token, id, fullName, email, "ADMIN")
+else Vérifier utilisateur
+    AS -> UR : findByEmailIgnoreCase(email)
+    activate UR
+    UR --> AS : Optional<AppUser>
+    deactivate UR
+    
+    alt Utilisateur trouvé ET mot de passe correct
+        AS -> AS : createToken()
+        AS -> AS : sessions.put(token, {id, "USER"})
+        AS --> AC : AuthResponse(token, id, fullName, email, "USER")
+    else Aucun match
+        AS --> AC : throw UnauthorizedException
+    end
+end
+
+deactivate AS
+AC --> FE : 200 OK / 401 Unauthorized
+deactivate AC
+FE --> User : Redirection / Message d'erreur
+deactivate FE
+
+@enduml

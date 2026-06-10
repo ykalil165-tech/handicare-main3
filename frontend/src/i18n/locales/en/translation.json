@@ -182,6 +182,11 @@
     "hidePassword": "Hide password",
     "show": "Show",
     "hide": "Hide",
+    "changePassword": "Change password",
+    "currentPassword": "Current password",
+    "newPassword": "New password",
+    "confirmNewPassword": "Confirm new password",
+    "passwordChanged": "Password changed successfully",
     "forgotPasswordHelp": "For this prototype, contact the administrator to reset the password."
   },
   "accessibility": {

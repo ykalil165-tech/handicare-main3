@@ -1,0 +1,46 @@
+\documentclass[border=10pt]{standalone}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{tikz}
+\usepackage{tikz-uml}
+\usepackage{lmodern}
+
+\begin{document}
+\begin{tikzpicture}
+
+\begin{umlseqdiag}
+\umlobject[class=Client]{Frontend}
+\umlobject[class=REST]{AuthController}
+\umlobject[class=Service]{AuthService}
+\umlobject[class=Repository]{AdminUserRepo}
+\umlobject[class=Repository]{AppUserRepo}
+
+\begin{umlcall}[op={POST /api/auth/login(email, password)}, return={AuthResponse(token, user)}]{Frontend}{AuthController}
+  \begin{umlcall}[op={login(AuthRequest)}, return={AuthResponse}]{AuthController}{AuthService}
+    \begin{umlcall}[op={findByEmailIgnoreCase(email)}, return={Optional<AdminUser>}]{AuthService}{AdminUserRepo}
+    \end{umlcall}
+    \begin{umlfragment}[type=alt, label={admin found \& password matches}, inner xsep=2]
+      \begin{umlcallself}[op={createToken()}]{AuthService}
+      \end{umlcallself}
+      \begin{umlcallself}[op={sessions.put(token, session)}]{AuthService}
+      \end{umlcallself}
+    \umlfpart[else: check user]
+      \begin{umlcall}[op={findByEmailIgnoreCase(email)}, return={Optional<AppUser>}]{AuthService}{AppUserRepo}
+      \end{umlcall}
+      \begin{umlfragment}[type=alt, label={user found \& password matches}, inner xsep=2]
+        \begin{umlcallself}[op={createToken()}]{AuthService}
+        \end{umlcallself}
+        \begin{umlcallself}[op={sessions.put(token, session)}]{AuthService}
+        \end{umlcallself}
+      \umlfpart[else]
+        \begin{umlcallself}[op={throw UnauthorizedException}]{AuthService}
+        \end{umlcallself}
+      \end{umlfragment}
+    \end{umlfragment}
+  \end{umlcall}
+\end{umlcall}
+
+\end{umlseqdiag}
+
+\end{tikzpicture}
+\end{document}

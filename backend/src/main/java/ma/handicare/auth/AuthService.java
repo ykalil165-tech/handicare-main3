@@ -111,6 +111,29 @@ public class AuthService {
         }
     }
 
+    public void changePassword(String authorizationHeader, ChangePasswordRequest request) {
+        String token = extractToken(authorizationHeader);
+        SessionAccount session = sessions.get(token);
+        if (session == null) {
+            throw new UnauthorizedException();
+        }
+        if ("ADMIN".equals(session.accountType())) {
+            AdminUser admin = adminUserRepository.findById(session.accountId()).orElseThrow(UnauthorizedException::new);
+            if (!matchesPassword(request.currentPassword(), admin.getPasswordHash())) {
+                throw new IllegalArgumentException("Current password is incorrect");
+            }
+            admin.setPasswordHash(hashPassword(request.newPassword()));
+            adminUserRepository.save(admin);
+        } else {
+            AppUser user = appUserRepository.findById(session.accountId()).orElseThrow(UnauthorizedException::new);
+            if (!matchesPassword(request.currentPassword(), user.getPasswordHash())) {
+                throw new IllegalArgumentException("Current password is incorrect");
+            }
+            user.setPasswordHash(hashPassword(request.newPassword()));
+            appUserRepository.save(user);
+        }
+    }
+
     public void logout(String authorizationHeader) {
         sessions.remove(extractToken(authorizationHeader));
     }

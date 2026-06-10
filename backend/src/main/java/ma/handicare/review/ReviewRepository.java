@@ -28,4 +28,7 @@ public interface ReviewRepository extends JpaRepository<Review, Long> {
     Optional<Review> findByResourceIdAndUserId(Long resourceId, Long userId);
 
     boolean existsByResourceIdAndUserId(Long resourceId, Long userId);
+
+    @Query("SELECT r.resource.id, AVG(r.rating), COUNT(r) FROM Review r GROUP BY r.resource.id")
+    List<Object[]> findAverageRatingAndCountGrouped();
 }

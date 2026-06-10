@@ -182,7 +182,12 @@
     "hidePassword": "Masquer le mot de passe",
     "show": "Afficher",
     "hide": "Masquer",
-    "forgotPasswordHelp": "Pour le prototype, contactez l'administrateur pour réinitialiser le mot de passe."
+    "forgotPasswordHelp": "Pour le prototype, contactez l'administrateur pour réinitialiser le mot de passe.",
+    "changePassword": "Changer le mot de passe",
+    "currentPassword": "Mot de passe actuel",
+    "newPassword": "Nouveau mot de passe",
+    "confirmNewPassword": "Confirmer le nouveau mot de passe",
+    "passwordChanged": "Mot de passe modifié avec succès"
   },
   "accessibility": {
     "highContrast": "Contraste élevé",

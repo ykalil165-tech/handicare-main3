@@ -1,161 +1,209 @@
-"""Collecte prudente de ressources Google Maps pour HandiCare.
+"""
+Scrape Google Maps for disability-related resources in Casablanca.
+Uses Playwright to automate searches and extract place data.
 
 Usage:
-  python scrape_google_maps.py --queries queries.json --out data/raw_resources.json
-  playwright install chromium
-
-Note: pour une production stable et conforme, préférez Google Places API.
-Ce script applique des délais, limite les volumes et écrit des résultats bruts à valider.
+    python scrape_google_maps.py --queries queries.json --out raw_resources.json
 """
-from __future__ import annotations
 
 import argparse
 import json
-import random
 import re
 import time
 from pathlib import Path
-from urllib.parse import quote_plus
 
-from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
-
-
-def sleep_between(bounds: dict) -> None:
-    time.sleep(random.uniform(float(bounds.get("min", 4)), float(bounds.get("max", 9))))
+from playwright.sync_api import sync_playwright, TimeoutError as PwTimeout
 
 
-def text_or_none(locator):
+def parse_args():
+    parser = argparse.ArgumentParser(description="Scrape Google Maps places")
+    parser.add_argument("--queries", required=True, help="Path to JSON array of search queries")
+    parser.add_argument("--out", required=True, help="Output JSON file path")
+    parser.add_argument("--max-scroll", type=int, default=8, help="Max scroll iterations per query")
+    return parser.parse_args()
+
+
+def extract_places(page, max_scroll: int):
+    """Scroll the results panel and extract place cards."""
+    places = []
+    seen_names = set()
+
+    # Wait for results to load
     try:
-        value = locator.first.text_content(timeout=1500)
-        return value.strip() if value else None
-    except Exception:
-        return None
-
-
-def extract_coords(url: str):
-    patterns = [r"!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)", r"@(-?\d+\.\d+),(-?\d+\.\d+),"]
-    for pattern in patterns:
-        match = re.search(pattern, url)
-        if match:
-            return float(match.group(1)), float(match.group(2))
-    return None, None
-
-
-def parse_rating(text: str | None):
-    if not text:
-        return None, None
-    rating_match = re.search(r"(\d+[,.]\d+)", text)
-    count_match = re.search(r"\(?([\d\s,.]+)\)?\s*(avis|reviews)", text, re.I)
-    rating = float(rating_match.group(1).replace(',', '.')) if rating_match else None
-    count = None
-    if count_match:
-        raw = re.sub(r"\D", "", count_match.group(1))
-        count = int(raw) if raw else None
-    return rating, count
-
-
-def scrape_place(page, base_meta: dict):
-    url = page.url
-    lat, lng = extract_coords(url)
-    title = text_or_none(page.locator('h1'))
-    rating_text = text_or_none(page.locator('[role="img"][aria-label*="étoile"], [role="img"][aria-label*="star"]'))
-    rating, review_count = parse_rating(rating_text)
-
-    details = page.locator('button[data-item-id], a[data-item-id]')
-    address = phone = website = hours = None
-    for i in range(min(details.count(), 40)):
+        page.wait_for_selector('[role="feed"]', timeout=8000)
+    except PwTimeout:
+        # Try alternative selector
         try:
-            item = details.nth(i)
-            label = (item.get_attribute('aria-label') or '').strip()
-            data_id = item.get_attribute('data-item-id') or ''
-            if not label:
-                continue
-            lower = label.lower()
-            if 'address' in data_id or 'adresse' in lower:
-                address = label.replace('Adresse:', '').strip()
-            elif 'phone' in data_id or 'téléphone' in lower or 'telephone' in lower:
-                phone = label.replace('Téléphone:', '').replace('Phone:', '').strip()
-            elif 'authority' in data_id or 'site web' in lower or 'website' in lower:
-                website = item.get_attribute('href') or label
-            elif 'hours' in data_id or 'horaires' in lower:
-                hours = label
-        except Exception:
+            page.wait_for_selector('div.Nv2PK', timeout=5000)
+        except PwTimeout:
+            return places
+
+    feed = page.query_selector('[role="feed"]')
+    if not feed:
+        feed = page.query_selector('div[aria-label]')
+
+    for _ in range(max_scroll):
+        # Scroll down in the feed
+        if feed:
+            feed.evaluate('el => el.scrollTop = el.scrollHeight')
+        else:
+            page.mouse.wheel(0, 800)
+        time.sleep(2)
+
+    # Extract all place links
+    cards = page.query_selector_all('a.hfpxzc')
+    if not cards:
+        cards = page.query_selector_all('div.Nv2PK a')
+
+    for card in cards:
+        name = card.get_attribute('aria-label') or ''
+        href = card.get_attribute('href') or ''
+        if not name or name in seen_names:
             continue
+        seen_names.add(name)
+        places.append({'name': name, 'url': href})
 
-    if not title or not address or lat is None or lng is None:
-        return None
-
-    return {
-        'name': title,
-        'type': base_meta['type'],
-        'disabilityKeys': base_meta['disabilityKeys'],
-        'description': f"Ressource détectée via Google Maps pour la recherche: {base_meta['query']}",
-        'address': address,
-        'latitude': lat,
-        'longitude': lng,
-        'phone': phone,
-        'website': website,
-        'openingHours': hours,
-        'googleRating': rating,
-        'googleReviewCount': review_count,
-        'source': 'google_maps',
-        'sourceUrl': url,
-        'verified': False,
-        'services': base_meta['query'],
-        'languages': 'Arabe, Français',
-    }
+    return places
 
 
-def run(config_path: Path, out_path: Path) -> None:
-    config = json.loads(config_path.read_text(encoding='utf-8'))
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    results = []
+def extract_place_details(page, place_url: str, timeout_ms: int = 10000) -> dict:
+    """Navigate to a place page and extract details."""
+    details = {}
+    try:
+        page.goto(place_url, wait_until='domcontentloaded', timeout=timeout_ms)
+        time.sleep(2)
+
+        # Name
+        name_el = page.query_selector('h1.DUwDvf')
+        if name_el:
+            details['name'] = name_el.inner_text().strip()
+
+        # Address
+        addr_el = page.query_selector('button[data-item-id="address"] .Io6YTe')
+        if not addr_el:
+            addr_el = page.query_selector('[data-item-id="address"]')
+        if addr_el:
+            details['address'] = addr_el.inner_text().strip()
+
+        # Phone
+        phone_el = page.query_selector('button[data-item-id^="phone"] .Io6YTe')
+        if not phone_el:
+            phone_el = page.query_selector('[data-item-id^="phone"]')
+        if phone_el:
+            details['phone'] = phone_el.inner_text().strip()
+
+        # Website
+        web_el = page.query_selector('a[data-item-id="authority"] .Io6YTe')
+        if not web_el:
+            web_el = page.query_selector('[data-item-id="authority"]')
+        if web_el:
+            details['website'] = web_el.inner_text().strip()
+
+        # Rating
+        rating_el = page.query_selector('div.F7nice span[aria-hidden="true"]')
+        if rating_el:
+            try:
+                details['rating'] = float(rating_el.inner_text().strip().replace(',', '.'))
+            except ValueError:
+                pass
+
+        # Category / type
+        cat_el = page.query_selector('button.DkEaL')
+        if cat_el:
+            details['category'] = cat_el.inner_text().strip()
+
+        # Hours
+        hours_el = page.query_selector('[data-item-id="oh"] .Io6YTe')
+        if hours_el:
+            details['hours'] = hours_el.inner_text().strip()
+
+        # Coordinates from URL
+        url = page.url
+        coord_match = re.search(r'@(-?\d+\.\d+),(-?\d+\.\d+)', url)
+        if coord_match:
+            details['latitude'] = float(coord_match.group(1))
+            details['longitude'] = float(coord_match.group(2))
+
+    except Exception as e:
+        details['_error'] = str(e)
+
+    return details
+
+
+def run_scraper(queries: list, max_scroll: int) -> list:
+    """Run the scraper across all queries."""
+    all_results = []
+    seen_names = set()
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=False, slow_mo=150)
-        context = browser.new_context(locale='fr-FR')
+        browser = p.chromium.launch(headless=True)
+        context = browser.new_context(
+            locale='fr-FR',
+            geolocation={'latitude': 33.5731, 'longitude': -7.5898},
+            permissions=['geolocation']
+        )
         page = context.new_page()
-        for item in config['queries']:
-            search = f"{item['query']} {config.get('city', '')}".strip()
-            page.goto(f"https://www.google.com/maps/search/{quote_plus(search)}", wait_until='domcontentloaded')
-            sleep_between(config.get('delaySeconds', {}))
 
-            cards = page.locator('a[href*="/maps/place/"]')
-            seen_links = []
-            limit = int(config.get('maxResultsPerQuery', 25))
-            for _ in range(8):
-                for i in range(min(cards.count(), limit * 2)):
-                    try:
-                        href = cards.nth(i).get_attribute('href')
-                        if href and href not in seen_links:
-                            seen_links.append(href)
-                    except Exception:
-                        pass
-                if len(seen_links) >= limit:
-                    break
-                page.mouse.wheel(0, 900)
-                sleep_between({'min': 1.5, 'max': 3})
+        for query in queries:
+            print(f"[*] Searching: {query}")
+            search_url = f"https://www.google.com/maps/search/{query.replace(' ', '+')}"
+            try:
+                page.goto(search_url, wait_until='domcontentloaded', timeout=15000)
+            except PwTimeout:
+                print(f"  [!] Timeout loading search page for: {query}")
+                continue
 
-            for href in seen_links[:limit]:
-                page.goto(href, wait_until='domcontentloaded')
-                sleep_between(config.get('delaySeconds', {}))
-                try:
-                    record = scrape_place(page, item)
-                    if record:
-                        results.append(record)
-                except PlaywrightTimeoutError:
+            time.sleep(3)
+
+            # Accept cookies if prompted
+            try:
+                accept_btn = page.query_selector('button[aria-label*="Accept"], button[aria-label*="Accepter"], form[action*="consent"] button')
+                if accept_btn:
+                    accept_btn.click()
+                    time.sleep(1)
+            except Exception:
+                pass
+
+            places = extract_places(page, max_scroll)
+            print(f"  Found {len(places)} places")
+
+            for place in places:
+                if place['name'] in seen_names:
                     continue
+                seen_names.add(place['name'])
 
-        context.close()
+                if place.get('url'):
+                    details = extract_place_details(page, place['url'])
+                    place.update(details)
+
+                place['_query'] = query
+                all_results.append(place)
+                print(f"    -> {place.get('name', '?')}")
+
         browser.close()
 
+    return all_results
+
+
+def main():
+    args = parse_args()
+
+    queries_path = Path(args.queries)
+    if not queries_path.exists():
+        print(f"Error: queries file not found: {queries_path}")
+        return
+
+    queries = json.loads(queries_path.read_text(encoding='utf-8'))
+
+    print(f"Loaded {len(queries)} queries")
+    results = run_scraper(queries, args.max_scroll)
+    print(f"\nTotal unique places scraped: {len(results)}")
+
+    out_path = Path(args.out)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding='utf-8')
-    print(f"Raw resources: {len(results)} -> {out_path}")
+    print(f"Saved to: {out_path}")
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--queries', default='queries.json')
-    parser.add_argument('--out', default='data/raw_resources.json')
-    args = parser.parse_args()
-    run(Path(args.queries), Path(args.out))
+    main()

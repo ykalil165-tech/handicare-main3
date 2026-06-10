@@ -149,6 +149,11 @@
     "hidePassword": "إخفاء كلمة المرور",
     "show": "إظهار",
     "hide": "إخفاء",
+    "changePassword": "تغيير كلمة المرور",
+    "currentPassword": "كلمة المرور الحالية",
+    "newPassword": "كلمة المرور الجديدة",
+    "confirmNewPassword": "تأكيد كلمة المرور الجديدة",
+    "passwordChanged": "تم تغيير كلمة المرور بنجاح",
     "forgotPasswordHelp": "في هذا النموذج، تواصل مع المسؤول لإعادة تعيين كلمة المرور."
   },
   "accessibility": {

@@ -1,0 +1,215 @@
+\documentclass[border=10pt]{standalone}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{tikz}
+\usepackage{tikz-uml}
+\usepackage{lmodern}
+
+\begin{document}
+\begin{tikzpicture}
+
+% ===== Entity Classes =====
+
+\umlclass[x=0, y=0]{AppUser}{
+  - id : Long \\
+  - fullName : String \\
+  - email : String \\
+  - preferredNeed : String \\
+  - passwordHash : String
+}{
+  + getId() : Long \\
+  + getFullName() : String \\
+  + getEmail() : String \\
+  + getPreferredNeed() : String
+}
+
+\umlclass[x=8, y=0]{AdminUser}{
+  - id : Long \\
+  - fullName : String \\
+  - email : String \\
+  - role : String \\
+  - principal : Boolean \\
+  - passwordHash : String
+}{
+  + getId() : Long \\
+  + getFullName() : String \\
+  + getEmail() : String \\
+  + getRole() : String
+}
+
+\umlclass[x=0, y=-7]{SupportResource}{
+  - id : Long \\
+  - name : String \\
+  - type : ResourceType \\
+  - disabilityKeys : String \\
+  - description : String \\
+  - address : String \\
+  - latitude : Double \\
+  - longitude : Double \\
+  - phone : String \\
+  - email : String \\
+  - website : String \\
+  - accessibilityScore : Integer \\
+  - verified : Boolean
+}{
+  + getId() : Long \\
+  + getName() : String \\
+  + getType() : ResourceType
+}
+
+\umlclass[x=8, y=-6]{Review}{
+  - id : Long \\
+  - rating : Integer \\
+  - comment : String \\
+  - appointmentDifficulty : AppointmentDifficulty \\
+  - createdAt : LocalDateTime \\
+  - updatedAt : LocalDateTime
+}{
+  + getId() : Long \\
+  + getRating() : Integer \\
+  + getComment() : String
+}
+
+\umlclass[x=16, y=0]{AssociationAccount}{
+  - id : Long \\
+  - associationName : String \\
+  - email : String \\
+  - passwordHash : String \\
+  - phone : String \\
+  - address : String \\
+  - disabilityKeys : String \\
+  - services : String \\
+  - status : AssociationStatus
+}{
+  + getId() : Long \\
+  + getAssociationName() : String \\
+  + getStatus() : AssociationStatus
+}
+
+\umlclass[x=-7, y=-4]{Favorite}{
+  - id : Long \\
+  - createdAt : LocalDateTime
+}{
+  + getId() : Long \\
+  + getUser() : AppUser \\
+  + getResource() : SupportResource
+}
+
+\umlclass[x=16, y=-6]{Notification}{
+  - id : Long \\
+  - userId : Long \\
+  - userType : String \\
+  - type : String \\
+  - text : String \\
+  - relatedId : Long \\
+  - read : boolean \\
+  - createdAt : LocalDateTime
+}{
+  + getId() : Long \\
+  + getText() : String \\
+  + isRead() : boolean
+}
+
+\umlclass[x=16, y=-12]{Message}{
+  - id : Long \\
+  - senderId : Long \\
+  - senderType : String \\
+  - receiverId : Long \\
+  - receiverType : String \\
+  - content : String \\
+  - read : boolean \\
+  - createdAt : LocalDateTime
+}{
+  + getId() : Long \\
+  + getContent() : String \\
+  + isRead() : boolean
+}
+
+\umlclass[x=0, y=-14]{CommunityPost}{
+  - id : Long \\
+  - author : String \\
+  - groupName : String \\
+  - handicapType : String \\
+  - content : String \\
+  - tags : String \\
+  - likesCount : int \\
+  - authorId : Long \\
+  - authorType : String \\
+  - createdAt : LocalDateTime
+}{
+  + getId() : Long \\
+  + getContent() : String \\
+  + getAuthor() : String
+}
+
+\umlclass[x=8, y=-14]{CommunityComment}{
+  - id : Long \\
+  - content : String \\
+  - authorId : Long \\
+  - authorType : String \\
+  - createdAt : LocalDateTime
+}{
+  + getId() : Long \\
+  + getContent() : String
+}
+
+% ===== Enumerations =====
+
+\umlenum[x=-7, y=-8]{ResourceType}{
+  HOSPITAL \\
+  CLINIC \\
+  ASSOCIATION \\
+  SCHOOL \\
+  CENTER \\
+  OTHER
+}
+
+\umlenum[x=-7, y=-12]{AssociationStatus}{
+  PENDING \\
+  APPROVED \\
+  REJECTED
+}
+
+% ===== Service Classes =====
+
+\umlclass[type=abstract, x=4, y=4]{AuthService}{
+  - sessions : Map<String, SessionAccount>
+}{
+  + login(AuthRequest) : AuthResponse \\
+  + register(RegisterRequest) : AuthResponse \\
+  + requireUser(authHeader) : AppUser \\
+  + requireAdmin(authHeader) : AdminUser \\
+  + logout(authHeader) : void
+}
+
+% ===== Relationships =====
+
+% Review -> SupportResource (ManyToOne)
+\umlaggreg[mult1=*, mult2=1, pos1=0.2, pos2=0.8]{Review}{SupportResource}
+
+% Review -> AppUser (ManyToOne)
+\umlaggreg[mult1=*, mult2=1, geometry=-|, arm1=-1.5cm]{Review}{AppUser}
+
+% Favorite -> AppUser (ManyToOne)
+\umlaggreg[mult1=*, mult2=1]{Favorite}{AppUser}
+
+% Favorite -> SupportResource (ManyToOne)
+\umlaggreg[mult1=*, mult2=1]{Favorite}{SupportResource}
+
+% CommunityComment -> CommunityPost
+\umlaggreg[mult1=*, mult2=1]{CommunityComment}{CommunityPost}
+
+% AuthService -> AppUser (uses)
+\umldep[geometry=|-]{AuthService}{AppUser}
+
+% AuthService -> AdminUser (uses)
+\umldep{AuthService}{AdminUser}
+
+% SupportResource ..> ResourceType
+\umldep{SupportResource}{ResourceType}
+
+% AssociationAccount ..> AssociationStatus
+\umldep{AssociationAccount}{AssociationStatus}
+
+\end{tikzpicture}
+\end{document}

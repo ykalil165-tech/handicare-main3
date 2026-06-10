@@ -9,5 +9,7 @@ public interface AssociationAccountRepository extends JpaRepository<AssociationA
     Optional<AssociationAccount> findByEmailIgnoreCase(String email);
 
     List<AssociationAccount> findByStatusOrderByAssociationNameAsc(AssociationStatus status);
+
+    boolean existsByPlatformEmail(String platformEmail);
 }
 
